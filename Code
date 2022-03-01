@@ -1,1 +1,204 @@
+#include <Servo.h>
+#include <SPI.h>
+#include <LiquidCrystal_I2C.h>
+#include <MFRC522.h>
+#include <SD.h>
+#define SS_PIN 10
+#define SS_SD 4
+#define RST_PIN 9
+#define OPEN_SD_PIN 6
 
+File myFile;
+
+MFRC522 mfrc522(SS_PIN, RST_PIN);
+unsigned long uidDec, uidDecTemp;  
+Servo servo;
+bool serva = true;
+
+LiquidCrystal_I2C lcd(0x27,16,2);
+
+int Getcard(){
+  
+
+  if ( ! mfrc522.PICC_IsNewCardPresent()) {
+    return 0;
+  }
+
+  if ( ! mfrc522.PICC_ReadCardSerial()) {
+    Serial.println("PICC_ReadCardSerial");
+    return 0;
+  }
+  uidDec = 0;
+
+  for (byte i = 0; i < mfrc522.uid.size; i++)
+  {
+    uidDecTemp = mfrc522.uid.uidByte[i];
+    uidDec = uidDec * 256 + uidDecTemp;
+  }
+  return 1;
+}
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(OPEN_SD_PIN, OUTPUT);
+  pinMode(SS_SD, OUTPUT);
+  pinMode(SS_PIN, OUTPUT);
+  digitalWrite(OPEN_SD_PIN, LOW);
+  digitalWrite(SS_PIN, HIGH);
+  digitalWrite(SS_SD, HIGH);
+  delay(10);
+  Serial.print("Initializing RFID card...");
+  SPI.begin();
+  mfrc522.PCD_Init();
+  Serial.println("initialization RFID  done.");
+  
+  digitalWrite(OPEN_SD_PIN, HIGH);
+  digitalWrite(SS_PIN, HIGH);
+  digitalWrite(SS_SD, HIGH);
+  delay(10);
+  
+  Serial.print("Initializing SD card...");
+   if (!SD.begin(4)) {
+    Serial.print("initialization failed!");
+//   while (1);
+  }
+  Serial.println("initialization SD done.");
+    
+  Serial.println("Initializing LCD card...");
+  lcd.init(); 
+  lcd.clear();
+  lcd.backlight();                
+  lcd.setCursor(0,0);             
+  Serial.print("Initializing LCD done.");
+ 
+
+  Serial.println("initialization Srevo.");
+  servo.attach(8);
+  servo.write(0);
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("Waiting for card...");
+  digitalWrite(SS_PIN, HIGH);
+  digitalWrite(SS_SD, HIGH);
+  delay(10);
+  digitalWrite(OPEN_SD_PIN, LOW);
+  mfrc522.PCD_Init();
+
+}
+void loop() {
+  int getID = Getcard();
+  if (getID == 0) return;
+  Serial.println("Card UID: ");
+  Serial.println(uidDec); 
+  if (uidDec == 1655780179){
+    Serial.println("Mastercard");
+    lcd.clear();
+    lcd.setCursor(0,0);
+    lcd.print("Mastercard");
+    delay(1000);
+    lcd.clear();
+    lcd.setCursor(0,0);
+    lcd.print("Put your card");
+    delay(5000);
+    getID = Getcard();
+    if (getID == 0){
+      lcd.clear();
+      lcd.setCursor(0,0);
+      lcd.print("No card");
+      delay(1500);
+      lcd.clear();
+      lcd.setCursor(0,0);
+      lcd.print("Waiting for card...");
+      return;
+    }
+    digitalWrite(SS_PIN, HIGH);
+    digitalWrite(SS_SD, HIGH);
+    delay(10);
+    digitalWrite(OPEN_SD_PIN, HIGH);
+    SD.begin(SS_SD);
+    myFile = SD.open("test.txt", FILE_WRITE);
+    if (myFile) {
+    Serial.print("Writing to test.txt...");
+    myFile.println(uidDec);
+    // close the file:
+    myFile.close();
+    Serial.println("done.");
+    lcd.clear();
+    lcd.setCursor(0,0);
+    lcd.print("New card");
+    lcd.setCursor(0,1);
+    lcd.print("activated");
+    delay(2000);
+    digitalWrite(SS_PIN, HIGH);
+    digitalWrite(SS_SD, HIGH);
+    delay(10);
+    digitalWrite(OPEN_SD_PIN, LOW);
+    mfrc522.PCD_Init();
+    lcd.clear();
+    lcd.setCursor(0,0);
+    lcd.print("Waiting for card...");
+    return;
+    }
+  }
+  if (uidDec != 0){
+    bool card = true;
+    digitalWrite(SS_PIN, HIGH);
+    digitalWrite(SS_SD, HIGH);
+    delay(10);
+    digitalWrite(OPEN_SD_PIN, HIGH);
+    SD.begin(SS_SD);
+    myFile = SD.open("test.txt");
+    if (myFile) {
+       String finalString = "";
+    Serial.println("test.txt:");
+
+    while (myFile.available()) {
+      finalString += (char)myFile.read();
+    }
+    myFile.close();
+    char buf[finalString.length()];
+    finalString.toCharArray(buf, finalString.length());
+    char* tok = strtok(buf, "\n");
+    while (tok != NULL) {
+      unsigned long y = strtoul(tok, NULL, 10);
+          if (uidDec == y)
+        { lcd.clear();
+          lcd.setCursor(0,0);
+          lcd.print("Good card.");
+          Serial.println(uidDec);
+          serva = !serva;
+          tok = NULL;
+          card = false;
+          if (serva){
+            servo.write(0);
+            lcd.setCursor(0,1);
+            lcd.print("Closing...");
+  }
+          else {
+            servo.write(90);
+            lcd.setCursor(0,1);
+            lcd.print("Opening...");
+  }
+      break;
+    }
+    
+    tok=strtok(NULL, "\n");
+      }
+      if (card){
+        lcd.clear();
+          lcd.setCursor(0,0);
+          lcd.print("Bad card.");
+        }
+
+    delay(3000);
+    }
+    digitalWrite(SS_PIN, HIGH);
+    digitalWrite(SS_SD, HIGH);
+    delay(10);
+    digitalWrite(OPEN_SD_PIN, LOW);
+    mfrc522.PCD_Init();
+  }
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("Waiting for card...");
+}
